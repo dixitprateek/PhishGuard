@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PhishGuard — Analyst Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Orbitron:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+    :root {
+      --bg:#060609; --bg2:#0d0d14; --bg3:#11111c;
+      --border:#1c1c2e; --border2:#252538;
+      --text:#c9c9e8; --muted:#4a4a6a;
+      --safe:#00e5a0; --danger:#ff3e6c;
+      --warn:#ffb547; --accent:#7c6af7; --accent2:#a78bfa;
+      --scan-blue:#38bdf8;
+    }
+
+    html, body { height:100%; background:var(--bg); color:var(--text); font-family:'JetBrains Mono',monospace; overflow-x:hidden; }
+
+    body::after {
+      content:''; pointer-events:none; position:fixed; inset:0; z-index:9999;
+      background:repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    }
+
+    .layout { display:flex; min-height:100vh; }
+
+    /* Sidebar */
+    .sidebar {
+      width:220px; flex-shrink:0; background:var(--bg2);
+      border-right:1px solid var(--border);
+      display:flex; flex-direction:column;
+      position:sticky; top:0; height:100vh;
+    }
+    .sidebar-logo { padding:24px 20px 20px; border-bottom:1px solid var(--border); }
+    .sidebar-logo h1 { font-family:'Orbitron',monospace; font-size:13px; font-weight:900; letter-spacing:.15em; color:#fff; }
+    .sidebar-logo p  { font-size:9px; color:var(--muted); letter-spacing:.1em; margin-top:4px; }
+    .api-status { display:flex; align-items:center; gap:6px; margin-top:10px; font-size:9px; color:var(--muted); }
+    .dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+    .dot.online  { background:var(--safe); box-shadow:0 0 6px var(--safe); animation:blink 2s infinite; }
+    .dot.offline { background:var(--danger); }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .sidebar-nav { padding:16px 12px; flex:1; }
+    .nav-item {
+      display:flex; align-items:center; gap:10px; padding:9px 12px;
+      border-radius:8px; font-size:11px; letter-spacing:.05em;
+      color:var(--muted); cursor:pointer; transition:all .15s;
+      margin-bottom:2px; border:1px solid transparent; user-select:none;
+    }
+    .nav-item:hover  { color:var(--text); background:var(--bg3); }
+    .nav-item.active { color:var(--accent2); background:rgba(124,106,247,.08); border-color:rgba(124,106,247,.2); }
+    .nav-icon { font-size:13px; width:18px; text-align:center; }
+    .sidebar-footer { padding:16px 20px; border-top:1px solid var(--border); font-size:9px; color:var(--muted); line-height:1.6; }
+
+    /* Main */
+    .main { flex:1; overflow:auto; }
+    .topbar {
+      padding:20px 28px; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+      background:var(--bg2); position:sticky; top:0; z-index:10;
+    }
+    .topbar h2 { font-family:'Orbitron',monospace; font-size:14px; font-weight:700; letter-spacing:.1em; color:#fff; }
+    .topbar-right { display:flex; align-items:center; gap:12px; }
+    .refresh-btn {
+      padding:7px 14px; background:transparent; border:1px solid var(--border2);
+      color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:10px;
+      letter-spacing:.06em; border-radius:6px; cursor:pointer; transition:all .15s;
+    }
+    .refresh-btn:hover { border-color:var(--accent); color:var(--accent2); }
+    .timestamp { font-size:10px; color:var(--muted); }
+
+    .content { padding:24px 28px; }
+
+    /* Scan bar */
+    .scan-bar { display:flex; gap:10px; margin-bottom:24px; }
+    .scan-input {
+      flex:1; background:var(--bg3); border:1px solid var(--border2); color:var(--text);
+      font-family:'JetBrains Mono',monospace; font-size:12px; padding:10px 14px;
+      border-radius:8px; outline:none; transition:border-color .2s;
+    }
+    .scan-input::placeholder { color:var(--muted); }
+    .scan-input:focus { border-color:var(--accent); }
+    .scan-submit {
+      padding:10px 20px; background:var(--accent); color:#fff; border:none;
+      font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600;
+      letter-spacing:.08em; border-radius:8px; cursor:pointer;
+      transition:opacity .15s, transform .1s; white-space:nowrap;
+    }
+    .scan-submit:hover   { opacity:.85; }
+    .scan-submit:active  { transform:scale(.97); }
+    .scan-submit:disabled{ opacity:.4; cursor:default; }
+
+    /* Stat cards */
+    .stat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:24px; }
+    .stat-card {
+      background:var(--bg2); border:1px solid var(--border); border-radius:12px;
+      padding:16px 18px; position:relative; overflow:hidden; transition:border-color .2s;
+    }
+    .stat-card:hover { border-color:var(--border2); }
+    .stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; }
+    .stat-card.blue::before   { background:var(--scan-blue); }
+    .stat-card.green::before  { background:var(--safe); }
+    .stat-card.red::before    { background:var(--danger); }
+    .stat-card.purple::before { background:var(--accent); }
+    .stat-label { font-size:9px; color:var(--muted); letter-spacing:.12em; text-transform:uppercase; margin-bottom:8px; }
+    .stat-value { font-family:'Orbitron',monospace; font-size:26px; font-weight:700; color:#fff; line-height:1; }
+    .stat-sub   { font-size:9px; color:var(--muted); margin-top:6px; }
+
+    /* Grid */
+    .main-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+    .panel { background:var(--bg2); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+    .panel-header {
+      padding:14px 18px; border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .panel-title { font-size:10px; font-weight:600; letter-spacing:.1em; color:var(--text); text-transform:uppercase; }
+    .panel-badge { font-size:9px; padding:3px 8px; background:rgba(124,106,247,.12); color:var(--accent2); border-radius:4px; letter-spacing:.06em; }
+    .panel-body  { padding:16px 18px; }
+
+    /* Table */
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; font-size:11px; }
+    thead th {
+      padding:8px 12px; text-align:left; font-size:9px; color:var(--muted);
+      letter-spacing:.1em; text-transform:uppercase; border-bottom:1px solid var(--border); font-weight:500;
+    }
+    tbody tr { border-bottom:1px solid var(--border); transition:background .1s; }
+    tbody tr:last-child { border-bottom:none; }
+    tbody tr:hover { background:var(--bg3); }
+    tbody td { padding:9px 12px; vertical-align:middle; }
+    .url-cell { max-width:300px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); font-size:11px; }
+
+    .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:9px; font-weight:600; letter-spacing:.08em; }
+    .badge-safe   { background:rgba(0,229,160,.1);  color:var(--safe);   border:1px solid rgba(0,229,160,.2); }
+    .badge-danger { background:rgba(255,62,108,.1); color:var(--danger); border:1px solid rgba(255,62,108,.2); }
+    .badge-warn   { background:rgba(255,181,71,.1); color:var(--warn);   border:1px solid rgba(255,181,71,.2); }
+
+    .conf-mini { display:flex; align-items:center; gap:6px; }
+    .conf-track { width:60px; height:3px; background:var(--border); border-radius:2px; overflow:hidden; }
+    .conf-fill  { height:100%; border-radius:2px; }
+    .fill-safe   { background:var(--safe); }
+    .fill-danger { background:var(--danger); }
+    .fill-warn   { background:var(--warn); }
+    .time-cell { color:var(--muted); font-size:10px; white-space:nowrap; }
+
+    /* Inline result */
+    .inline-result {
+      margin-bottom:24px; padding:14px 18px; border-radius:10px;
+      border:1px solid var(--border); background:var(--bg2);
+      display:flex; align-items:center; gap:14px;
+      animation:fadeIn .3s ease;
+    }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+    .inline-result.safe   { border-color:rgba(0,229,160,.3);  background:rgba(0,229,160,.04); }
+    .inline-result.danger { border-color:rgba(255,62,108,.3); background:rgba(255,62,108,.04); }
+    .inline-result.warn   { border-color:rgba(255,181,71,.3); background:rgba(255,181,71,.04); }
+    .result-icon { font-size:24px; flex-shrink:0; }
+    .result-info { flex:1; }
+    .result-info h3 { font-size:13px; font-weight:700; margin-bottom:3px; }
+    .result-info p  { font-size:10px; color:var(--muted); }
+    .result-conf    { font-size:11px; font-weight:600; font-family:'Orbitron',monospace; }
+
+    /* Charts (pure CSS/SVG) */
+    .chart-container { width:100%; height:200px; display:flex; align-items:center; justify-content:center; }
+    .bar-chart { display:flex; align-items:flex-end; gap:12px; height:160px; padding:0 8px; width:100%; }
+    .bar-col { display:flex; flex-direction:column; align-items:center; gap:6px; flex:1; }
+    .bar-fill { width:100%; border-radius:4px 4px 0 0; transition:height .5s ease; min-height:2px; }
+    .bar-label { font-size:9px; color:var(--muted); letter-spacing:.06em; }
+    .bar-val   { font-size:10px; font-family:'Orbitron',monospace; color:#fff; }
+
+    /* Donut chart */
+    .donut-wrap { display:flex; align-items:center; gap:20px; }
+    .donut-legend { display:flex; flex-direction:column; gap:8px; }
+    .legend-item  { display:flex; align-items:center; gap:8px; font-size:10px; }
+    .legend-dot   { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+    /* Timeline sparkline */
+    .timeline-wrap { width:100%; height:140px; position:relative; overflow:hidden; }
+    .timeline-svg  { width:100%; height:100%; }
+
+    /* Empty / loading */
+    .empty { text-align:center; padding:32px; color:var(--muted); font-size:11px; }
+    .empty-icon { font-size:28px; margin-bottom:8px; }
+    .spinner-sm { width:14px; height:14px; border:2px solid var(--border2); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    /* API offline banner */
+    .offline-banner {
+      background:rgba(255,62,108,.08); border:1px solid rgba(255,62,108,.25);
+      border-radius:8px; padding:10px 16px; margin-bottom:20px;
+      font-size:10px; color:var(--danger); display:flex; align-items:center; gap:8px;
+    }
+
+    .export-btn {
+      padding:5px 12px; background:transparent; border:1px solid var(--border2);
+      color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:9px;
+      letter-spacing:.06em; border-radius:5px; cursor:pointer; transition:all .15s;
+    }
+    .export-btn:hover { border-color:var(--safe); color:var(--safe); }
+
+    /* Error */
+    .error-msg { color:var(--danger); font-size:10px; padding:8px 0; }
+  </style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const API = 'http://127.0.0.1:8000';
+const TIMEOUT_MS = 4000;
+
+// ── HELPERS ─────────────────────────────────────────────────────────────────
+function fetchWithTimeout(url, opts = {}) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  return fetch(url, { ...opts, signal: ctrl.signal })
+    .finally(() => clearTimeout(id));
+}
+
+function fmtTime(iso) {
+  try { return new Date(iso).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' }); }
+  catch { return iso || '—'; }
+}
+
+function getRiskClass(risk) {
+  if (!risk) return 'safe';
+  if (risk === 'SAFE' || risk === 'LOW') return 'safe';
+  if (risk === 'MEDIUM') return 'warn';
+  return 'danger';
+}
+
+function genId() { return 'scan-' + Math.random().toString(36).slice(2,9); }
+
+// ── STATE ────────────────────────────────────────────────────────────────────
+const state = {
+  page: 'dashboard',
+  apiOk: null,
+  stats: null,
+  history: [],
+  loading: false,
+  lastRefresh: null,
+  scanUrl: '',
+  scanning: false,
+  scanResult: null,
+  error: null,
+};
+
+// ── RENDER ───────────────────────────────────────────────────────────────────
+function render() {
+  document.getElementById('app').innerHTML = buildApp();
+  attachEvents();
+}
+
+function buildApp() {
+  return `
+  <div class="layout">
+    ${buildSidebar()}
+    <main class="main">
+      ${buildTopbar()}
+      <div class="content">
+        ${state.apiOk === false ? buildOfflineBanner() : ''}
+        ${state.page === 'dashboard' ? buildDashboard() : ''}
+        ${state.page === 'history'   ? buildHistory()   : ''}
+        ${state.page === 'scanner'   ? buildScanner()   : ''}
+      </div>
+    </main>
+  </div>`;
+}
+
+function buildSidebar() {
+  const navItems = [
+    { id:'dashboard', icon:'◈', label:'DASHBOARD'   },
+    { id:'history',   icon:'≡', label:'SCAN HISTORY' },
+    { id:'scanner',   icon:'⌖', label:'URL SCANNER'  },
+  ];
+  const acc = state.stats?.metrics?.accuracy;
+  return `
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>PHISHGUARD</h1>
+      <p>ANALYST DASHBOARD v1.0</p>
+      <div class="api-status">
+        <div class="dot ${state.apiOk === true ? 'online' : 'offline'}"></div>
+        <span>${state.apiOk === true ? 'API ONLINE' : state.apiOk === false ? 'API OFFLINE' : 'CONNECTING…'}</span>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      ${navItems.map(n => `
+        <div class="nav-item ${state.page === n.id ? 'active' : ''}" data-nav="${n.id}">
+          <span class="nav-icon">${n.icon}</span>
+          <span>${n.label}</span>
+        </div>`).join('')}
+    </nav>
+    <div class="sidebar-footer">
+      MODEL: XGBoost + TF-IDF<br>
+      FEATURES: 3033<br>
+      ${acc ? `ACCURACY: ${(acc*100).toFixed(2)}%` : ''}
+    </div>
+  </aside>`;
+}
+
+function buildTopbar() {
+  const titles = { dashboard:'OVERVIEW', history:'SCAN HISTORY', scanner:'URL SCANNER' };
+  return `
+  <div class="topbar">
+    <h2>${titles[state.page]}</h2>
+    <div class="topbar-right">
+      ${state.lastRefresh ? `<span class="timestamp">Last refresh: ${state.lastRefresh}</span>` : ''}
+      <button class="refresh-btn" id="btn-refresh">↺ REFRESH</button>
+    </div>
+  </div>`;
+}
+
+function buildOfflineBanner() {
+  return `<div class="offline-banner">⚠ API unreachable at ${API} — start your FastAPI backend to enable live scanning. Dashboard shows demo/cached data.</div>`;
+}
+
+function buildScanBar(placeholder) {
+  return `
+  <div class="scan-bar">
+    <input class="scan-input" id="scan-input" placeholder="${placeholder}" value="${escHtml(state.scanUrl)}">
+    <button class="scan-submit" id="btn-scan" ${state.scanning || !state.scanUrl.trim() ? 'disabled' : ''}>
+      ${state.scanning ? '<span class="spinner-sm"></span> &nbsp;SCANNING' : '⌖ SCAN'}
+    </button>
+  </div>`;
+}
+
+function buildInlineResult() {
+  if (!state.scanResult) return '';
+  const r = state.scanResult;
+  if (r.error) return `<div class="error-msg">⚠ ${escHtml(r.error)}</div>`;
+  const cls = getRiskClass(r.risk_level);
+  const icon = cls === 'safe' ? '✅' : cls === 'warn' ? '⚠️' : '🚨';
+  const color = cls === 'safe' ? 'var(--safe)' : cls === 'warn' ? 'var(--warn)' : 'var(--danger)';
+  return `
+  <div class="inline-result ${cls}">
+    <div class="result-icon">${icon}</div>
+    <div class="result-info">
+      <h3 style="color:${color}">${r.label === 'legit' ? 'SAFE' : 'PHISHING DETECTED'} — ${r.risk_level}</h3>
+      <p style="word-break:break-all">${escHtml(r.url)}</p>
+      ${r.reason ? `<p style="color:var(--accent2)">${escHtml(r.reason)}</p>` : ''}
+    </div>
+    <div class="result-conf" style="color:${color}">${Math.round(r.confidence*100)}%</div>
+  </div>`;
+}
+
+// ── CHARTS ───────────────────────────────────────────────────────────────────
+function buildDonut() {
+  const phish = state.history.filter(h => h.label === 'phishing').length;
+  const legit = state.history.length - phish;
+  const total = state.history.length;
+
+  if (total === 0) return `<div class="empty"><div class="empty-icon">◌</div>No scans yet</div>`;
+
+  // Build SVG donut
+  const r = 60, cx = 85, cy = 85, stroke = 22;
+  const circ = 2 * Math.PI * r;
+  const phishPct = phish / total;
+  const legitPct = legit / total;
+  const gap = 0.02;
+
+  const phishDash = `${(phishPct - gap) * circ} ${circ}`;
+  const legitOffset = (phishPct) * circ;
+  const legitDash = `${(legitPct - gap) * circ} ${circ}`;
+
+  return `
+  <div class="donut-wrap">
+    <svg width="170" height="170" viewBox="0 0 170 170">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--border)" stroke-width="${stroke}"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#ff3e6c" stroke-width="${stroke}"
+        stroke-dasharray="${phishDash}" stroke-dashoffset="0"
+        transform="rotate(-90 ${cx} ${cy})" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#00e5a0" stroke-width="${stroke}"
+        stroke-dasharray="${legitDash}" stroke-dashoffset="${-legitOffset}"
+        transform="rotate(-90 ${cx} ${cy})" stroke-linecap="round"/>
+      <text x="${cx}" y="${cy - 6}" text-anchor="middle" fill="#fff" font-family="Orbitron,monospace" font-size="18" font-weight="700">${total}</text>
+      <text x="${cx}" y="${cy + 12}" text-anchor="middle" fill="var(--muted)" font-family="JetBrains Mono,monospace" font-size="9">SCANS</text>
+    </svg>
+    <div class="donut-legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#ff3e6c"></div><span style="color:var(--muted)">Phishing: </span>&nbsp;<strong style="color:#fff">${phish}</strong></div>
+      <div class="legend-item"><div class="legend-dot" style="background:#00e5a0"></div><span style="color:var(--muted)">Legit: </span>&nbsp;<strong style="color:#fff">${legit}</strong></div>
+      <div class="legend-item" style="margin-top:4px; font-size:9px; color:var(--muted)">
+        Phish rate: ${total ? Math.round(phish/total*100) : 0}%
+      </div>
+    </div>
+  </div>`;
+}
+
+function buildBarChart() {
+  const counts = { HIGH:0, MEDIUM:0, LOW:0, SAFE:0 };
+  state.history.forEach(h => { if (h.risk_level in counts) counts[h.risk_level]++; });
+  const max = Math.max(...Object.values(counts), 1);
+  const bars = [
+    { label:'HIGH',   val:counts.HIGH,   color:'#ff3e6c' },
+    { label:'MEDIUM', val:counts.MEDIUM, color:'#ffb547' },
+    { label:'LOW',    val:counts.LOW,    color:'#38bdf8' },
+    { label:'SAFE',   val:counts.SAFE,   color:'#00e5a0' },
+  ];
+  if (state.history.length === 0) return `<div class="empty"><div class="empty-icon">◌</div>No scans yet</div>`;
+  return `
+  <div class="bar-chart">
+    ${bars.map(b => `
+      <div class="bar-col">
+        <div class="bar-val">${b.val}</div>
+        <div style="flex:1;width:100%;display:flex;align-items:flex-end">
+          <div class="bar-fill" style="background:${b.color};height:${Math.max(4, Math.round(b.val/max*120))}px;width:100%"></div>
+        </div>
+        <div class="bar-label">${b.label}</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+function buildTimeline() {
+  const data = state.history.slice(0, 20).reverse().map(h => Math.round(h.confidence * 100));
+  if (data.length === 0) return `<div class="empty"><div class="empty-icon">◌</div>No scans yet</div>`;
+  const n = data.length;
+  const w = 560, h = 120, padX = 10, padY = 10;
+  const stepX = (w - padX*2) / Math.max(n-1, 1);
+  const pts = data.map((v,i) => {
+    const x = padX + i * stepX;
+    const y = padY + (1 - v/100) * (h - padY*2);
+    return `${x},${y}`;
+  }).join(' ');
+  // Area fill
+  const firstX = padX, lastX = padX + (n-1)*stepX;
+  const areaPath = `M${firstX},${h} L${pts.split(' ').map(p=>p).join(' L')} L${lastX},${h} Z`;
+  const linePath = `M${pts.split(' ').join(' L')}`;
+  return `
+  <svg viewBox="0 0 ${w} ${h}" class="timeline-svg" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#7c6af7" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="#7c6af7" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="${areaPath}" fill="url(#tg)"/>
+    <polyline points="${pts}" fill="none" stroke="#7c6af7" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${data.map((v,i) => {
+      const x = padX + i * stepX, y = padY + (1 - v/100) * (h - padY*2);
+      return `<circle cx="${x}" cy="${y}" r="3" fill="#7c6af7" stroke="var(--bg2)" stroke-width="1.5"/>`;
+    }).join('')}
+  </svg>`;
+}
+
+// ── PAGES ────────────────────────────────────────────────────────────────────
+function buildDashboard() {
+  const total   = state.stats?.total_scans ?? state.history.length;
+  const phish   = state.stats?.phishing_detected ?? state.history.filter(h=>h.label==='phishing').length;
+  const acc     = state.stats?.metrics?.accuracy;
+  const safeRate = total ? Math.round((total-phish)/total*100) : 0;
+
+  return `
+  ${buildScanBar('https://example.com — enter URL to scan')}
+  ${buildInlineResult()}
+  <div class="stat-grid">
+    <div class="stat-card blue">
+      <div class="stat-label">Total Scans</div>
+      <div class="stat-value">${state.loading ? '<span class="spinner-sm"></span>' : total}</div>
+      <div class="stat-sub">all time</div>
+    </div>
+    <div class="stat-card red">
+      <div class="stat-label">Phishing Detected</div>
+      <div class="stat-value">${state.loading ? '<span class="spinner-sm"></span>' : phish}</div>
+      <div class="stat-sub">${total ? Math.round(phish/total*100) : 0}% of total</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">Safe Rate</div>
+      <div class="stat-value">${safeRate}%</div>
+      <div class="stat-sub">legit URLs</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Model Accuracy</div>
+      <div class="stat-value">${acc ? (acc*100).toFixed(1)+'%' : '—'}</div>
+      <div class="stat-sub">on test set</div>
+    </div>
+  </div>
+  <div class="main-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">RISK DISTRIBUTION</span>
+        <span class="panel-badge">LIVE</span>
+      </div>
+      <div class="panel-body">${buildDonut()}</div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">RISK LEVELS</span>
+        <span class="panel-badge">${state.history.length} SCANS</span>
+      </div>
+      <div class="panel-body">${buildBarChart()}</div>
+    </div>
+    <div class="panel" style="grid-column:1/-1">
+      <div class="panel-header">
+        <span class="panel-title">CONFIDENCE TIMELINE (LAST 20)</span>
+      </div>
+      <div class="panel-body" style="padding:12px 18px">${buildTimeline()}</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">RECENT SCANS</span>
+      <button class="export-btn" id="btn-export">↓ EXPORT CSV</button>
+    </div>
+    ${buildTable(state.history.slice(0,10), false)}
+  </div>`;
+}
+
+function buildHistory() {
+  return `
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">ALL SCANS (${state.history.length})</span>
+      <button class="export-btn" id="btn-export">↓ EXPORT CSV</button>
+    </div>
+    ${buildTable(state.history, true)}
+  </div>`;
+}
+
+function buildScanner() {
+  const r = state.scanResult;
+  const cls = r ? getRiskClass(r.risk_level) : '';
+  return `
+  ${buildScanBar('Paste any URL to analyse…')}
+  ${buildInlineResult()}
+  ${r && !r.error ? `
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">THREAT REPORT</span>
+      <span class="panel-badge">${escHtml(r.scan_id||'')}</span>
+    </div>
+    <div class="panel-body">
+      ${[['URL',r.url],['VERDICT',r.label?.toUpperCase()],['RISK LEVEL',r.risk_level],
+         ['CONFIDENCE',Math.round(r.confidence*100)+'%'],['SCAN ID',r.scan_id],
+         ['TIMESTAMP',r.scanned_at],['REASON',r.reason||'ML model inference']]
+        .map(([k,v]) => `
+          <div style="display:flex;gap:16px;padding:7px 0;border-bottom:1px solid var(--border);font-size:11px">
+            <span style="color:var(--muted);width:110px;flex-shrink:0;letter-spacing:.08em">${k}</span>
+            <span style="color:var(--text);word-break:break-all">${escHtml(String(v||''))}</span>
+          </div>`).join('')}
+    </div>
+  </div>` : (!r ? `
+  <div class="panel"><div class="panel-body">
+    <div class="empty"><div class="empty-icon">⌖</div>Enter a URL above and press SCAN<br>
+    <span style="font-size:10px;margin-top:4px;display:block;color:var(--muted)">Results and threat report will appear here</span></div>
+  </div></div>` : '')}`;
+}
+
+function buildTable(rows, showReason) {
+  if (rows.length === 0) {
+    return `<div class="empty"><div class="empty-icon">◌</div>No scans yet${state.page==='dashboard'?' — scan a URL above':''}</div>`;
+  }
+  return `
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>URL</th><th>VERDICT</th><th>CONFIDENCE</th>
+        ${showReason ? '<th>REASON</th>' : ''}
+        <th>SCAN ID</th><th>TIME</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(h => {
+          const cls = getRiskClass(h.risk_level);
+          const pct = Math.round((h.confidence||0)*100);
+          return `<tr>
+            <td><div class="url-cell" title="${escHtml(h.url)}">${escHtml(h.url)}</div></td>
+            <td><span class="badge badge-${cls}">${escHtml(h.risk_level||'')}</span></td>
+            <td>
+              <div class="conf-mini">
+                <div class="conf-track"><div class="conf-fill fill-${cls}" style="width:${pct}%"></div></div>
+                <span style="font-size:10px;color:var(--muted)">${pct}%</span>
+              </div>
+            </td>
+            ${showReason ? `<td style="color:var(--muted);font-size:10px">${escHtml(h.reason||'—')}</td>` : ''}
+            <td style="color:var(--muted);font-size:10px">${escHtml(h.scan_id||'')}</td>
+            <td class="time-cell">${fmtTime(h.scanned_at)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── EVENTS ────────────────────────────────────────────────────────────────────
+function attachEvents() {
+  // Nav
+  document.querySelectorAll('[data-nav]').forEach(el => {
+    el.addEventListener('click', () => {
+      state.page = el.dataset.nav;
+      render();
+    });
+  });
+
+  // Refresh
+  const btnRefresh = document.getElementById('btn-refresh');
+  if (btnRefresh) btnRefresh.addEventListener('click', fetchAll);
+
+  // Scan input
+  const inp = document.getElementById('scan-input');
+  if (inp) {
+    inp.addEventListener('input', e => { state.scanUrl = e.target.value; syncScanBtn(); });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') doScan(); });
+    // Keep focus after render
+    inp.focus();
+    inp.setSelectionRange(inp.value.length, inp.value.length);
+  }
+
+  // Scan button
+  const btnScan = document.getElementById('btn-scan');
+  if (btnScan) btnScan.addEventListener('click', doScan);
+
+  // Export
+  const btnExport = document.getElementById('btn-export');
+  if (btnExport) btnExport.addEventListener('click', exportCSV);
+}
+
+function syncScanBtn() {
+  const btn = document.getElementById('btn-scan');
+  if (btn) btn.disabled = state.scanning || !state.scanUrl.trim();
+}
+
+// ── API CALLS ─────────────────────────────────────────────────────────────────
+async function fetchAll() {
+  state.loading = true;
+  render();
+  try {
+    const [healthRes, statsRes, histRes] = await Promise.all([
+      fetchWithTimeout(`${API}/health`).catch(() => null),
+      fetchWithTimeout(`${API}/stats`).catch(() => null),
+      fetchWithTimeout(`${API}/history?limit=100`).catch(() => null),
+    ]);
+    state.apiOk = !!(healthRes?.ok);
+    if (statsRes?.ok) state.stats = await statsRes.json();
+    if (histRes?.ok) {
+      const d = await histRes.json();
+      state.history = d.scans || [];
+    }
+    state.lastRefresh = new Date().toLocaleTimeString();
+  } catch (e) {
+    state.apiOk = false;
+  } finally {
+    state.loading = false;
+    render();
+  }
+}
+
+async function doScan() {
+  if (!state.scanUrl.trim() || state.scanning) return;
+  state.scanning = true;
+  state.scanResult = null;
+  render();
+  try {
+    const res = await fetchWithTimeout(`${API}/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: state.scanUrl.trim() }),
+    });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const data = await res.json();
+    state.scanResult = data;
+    state.history = [data, ...state.history].slice(0, 100);
+    if (state.stats) {
+      state.stats.total_scans = (state.stats.total_scans||0) + 1;
+      if (data.label === 'phishing') state.stats.phishing_detected = (state.stats.phishing_detected||0) + 1;
+    }
+  } catch (e) {
+    if (e.name === 'AbortError' || e.message.includes('fetch')) {
+      state.scanResult = { error: 'Cannot reach API at ' + API + '. Is your FastAPI server running?' };
+    } else {
+      state.scanResult = { error: e.message };
+    }
+  } finally {
+    state.scanning = false;
+    render();
+  }
+}
+
+function exportCSV() {
+  const rows = [['scan_id','url','label','confidence','risk_level','reason','scanned_at']];
+  state.history.forEach(h => rows.push([h.scan_id,h.url,h.label,h.confidence,h.risk_level,h.reason||'',h.scanned_at]));
+  const csv = rows.map(r => r.map(c => `"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
+  a.download = `phishguard_${Date.now()}.csv`;
+  a.click();
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+render();
+fetchAll();
+</script>
+</body>
+</html>
